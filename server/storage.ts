@@ -58,13 +58,20 @@ export class MemStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = this.userIdCounter++;
     const now = new Date();
+    
+    // Create a properly typed user with default values for required fields
     const user: User = { 
-      ...insertUser, 
-      id, 
+      id,
+      username: insertUser.username,
+      password: insertUser.password,
+      clerkId: insertUser.clerkId || null,
+      role: (insertUser.role as "writer" | "designer" | "developer" | "marketer") || null,
+      plan: (insertUser.plan as "free" | "pro") || "free",
       promptsUsedToday: 0,
       lastPromptDate: now,
       createdAt: now
     };
+    
     this.users.set(id, user);
     return user;
   }
@@ -140,7 +147,17 @@ export class MemStorage implements IStorage {
   async createPrompt(insertPrompt: InsertPrompt): Promise<Prompt> {
     const id = this.promptIdCounter++;
     const now = new Date();
-    const prompt: Prompt = { ...insertPrompt, id, createdAt: now };
+    
+    // Create a properly typed prompt with properly typed values
+    const prompt: Prompt = { 
+      id, 
+      originalPrompt: insertPrompt.originalPrompt,
+      enhancedPrompt: insertPrompt.enhancedPrompt,
+      role: (insertPrompt.role as "writer" | "designer" | "developer" | "marketer") || null,
+      userId: insertPrompt.userId || null,
+      createdAt: now 
+    };
+    
     this.prompts.set(id, prompt);
     return prompt;
   }

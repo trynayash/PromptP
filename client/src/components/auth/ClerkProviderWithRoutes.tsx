@@ -3,7 +3,7 @@ import { ReactNode, useEffect } from "react";
 import { useLocation } from "wouter";
 
 // Public routes that don't require authentication
-const publicPages = ["/"];
+const publicPages = ["/", "/try-demo"];
 
 interface ClerkProviderWithRoutesProps {
   children: ReactNode;

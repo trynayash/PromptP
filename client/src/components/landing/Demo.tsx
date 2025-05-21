@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { Link } from "wouter";
 
 export function Demo() {
   return (
@@ -59,9 +60,11 @@ export function Demo() {
           </div>
           
           <div className="mt-12 text-center">
-            <Button className="px-8 py-3 rounded-lg gradient-bg text-white shadow-md hover:shadow-xl transition-shadow">
-              Try It Yourself
-            </Button>
+            <Link href="/try-demo">
+              <Button className="px-8 py-3 rounded-lg gradient-bg text-white shadow-md hover:shadow-xl transition-shadow">
+                Try It Yourself
+              </Button>
+            </Link>
           </div>
         </div>
       </div>
