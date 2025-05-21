@@ -38,8 +38,8 @@ A modern web application for generating and managing AI prompts with a beautiful
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/ai-prompt-genius.git
-cd ai-prompt-genius
+git clone https://github.com/yourusername/promptp.git
+cd promptp
 ```
 
 2. Install dependencies:
@@ -120,5 +120,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 
 <div align="center">
-Made with ❤️ by [Your Name]
+Made with ❤️ by Yash Suthar
 </div> 
