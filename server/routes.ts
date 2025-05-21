@@ -24,8 +24,19 @@ import {
   getPopularTemplates,
   getRecentTemplates,
   getRecommendedTemplates,
-  compareTemplateVersions
+  compareTemplateVersions,
+  PromptTemplate
 } from "./template-manager";
+import {
+  generateRolePromptHeatmap,
+  generateUsageTrends,
+  generateUsageBreakdown,
+  generateWordCountStats,
+  generateUserInsights,
+  trackUsage,
+  DateRange,
+  UsageDataPoint
+} from "./analytics-engine";
 import { z } from "zod";
 import { insertPromptSchema } from "@shared/schema";
 
@@ -221,6 +232,562 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Error reordering prompt blocks:", error);
       return res.status(400).json({ 
         message: "Failed to reorder prompt blocks", 
+        error: error.message || "Unknown error occurred",
+        success: false
+      });
+    }
+  });
+  
+  // Template Management APIs
+  // In-memory storage for templates
+  const templates: PromptTemplate[] = [];
+  
+  app.post("/api/templates/create", async (req, res) => {
+    try {
+      const schema = z.object({
+        name: z.string().min(1, "Template name is required"),
+        description: z.string(),
+        userId: z.number(),
+        role: z.enum(["writer", "designer", "developer", "marketer"]),
+        category: z.string(),
+        tags: z.array(z.string()),
+        content: z.string().min(1, "Template content is required"),
+        isPublic: z.boolean().default(false)
+      });
+      
+      const templateInput = schema.parse(req.body);
+      
+      // Check if user exists
+      const user = await storage.getUser(templateInput.userId);
+      if (!user) {
+        return res.status(404).json({ 
+          message: "User not found", 
+          success: false 
+        });
+      }
+      
+      // Create new template
+      const template = createTemplate(templateInput);
+      
+      // Add to storage
+      templates.push(template);
+      
+      return res.status(201).json({
+        template,
+        success: true
+      });
+    } catch (error: any) {
+      console.error("Error creating template:", error);
+      return res.status(400).json({ 
+        message: "Failed to create template", 
+        error: error.message || "Unknown error occurred",
+        success: false
+      });
+    }
+  });
+  
+  app.get("/api/templates", async (req, res) => {
+    try {
+      const userId = req.query.userId ? parseInt(req.query.userId as string) : undefined;
+      const category = req.query.category as string | undefined;
+      const searchQuery = req.query.search as string | undefined;
+      const grouped = req.query.grouped === 'true';
+      
+      let filteredTemplates = [...templates];
+      
+      // Filter by user ID (if provided)
+      if (userId) {
+        // If user ID is provided, return user's templates + public templates
+        filteredTemplates = filteredTemplates.filter(t => 
+          t.userId === userId || t.isPublic
+        );
+      } else {
+        // If no user ID, return only public templates
+        filteredTemplates = filteredTemplates.filter(t => t.isPublic);
+      }
+      
+      // Filter by category (if provided)
+      if (category) {
+        filteredTemplates = filteredTemplates.filter(t => t.category === category);
+      }
+      
+      // Search if query provided
+      if (searchQuery) {
+        filteredTemplates = searchTemplates(filteredTemplates, searchQuery);
+      }
+      
+      // Group by category if requested
+      if (grouped) {
+        const groupedTemplates = groupTemplatesByCategory(filteredTemplates);
+        return res.json({
+          templates: groupedTemplates,
+          success: true
+        });
+      }
+      
+      return res.json({
+        templates: filteredTemplates,
+        success: true
+      });
+    } catch (error: any) {
+      console.error("Error fetching templates:", error);
+      return res.status(500).json({ 
+        message: "Failed to fetch templates", 
+        error: error.message || "Unknown error occurred",
+        success: false
+      });
+    }
+  });
+  
+  app.get("/api/templates/:id", async (req, res) => {
+    try {
+      const templateId = req.params.id;
+      
+      // Find template
+      const template = templates.find(t => t.id === templateId);
+      
+      if (!template) {
+        return res.status(404).json({ 
+          message: "Template not found", 
+          success: false 
+        });
+      }
+      
+      return res.json({
+        template,
+        success: true
+      });
+    } catch (error: any) {
+      console.error("Error fetching template:", error);
+      return res.status(500).json({ 
+        message: "Failed to fetch template", 
+        error: error.message || "Unknown error occurred",
+        success: false
+      });
+    }
+  });
+  
+  app.post("/api/templates/:id/apply", async (req, res) => {
+    try {
+      const templateId = req.params.id;
+      
+      const schema = z.object({
+        variableValues: z.array(z.object({
+          id: z.string(),
+          value: z.string()
+        }))
+      });
+      
+      const { variableValues } = schema.parse(req.body);
+      
+      // Find template
+      const template = templates.find(t => t.id === templateId);
+      
+      if (!template) {
+        return res.status(404).json({ 
+          message: "Template not found", 
+          success: false 
+        });
+      }
+      
+      // Apply template
+      const appliedPrompt = applyTemplate(template, variableValues);
+      
+      // Increment usage count
+      template.usageCount += 1;
+      
+      return res.json({
+        prompt: appliedPrompt,
+        success: true
+      });
+    } catch (error: any) {
+      console.error("Error applying template:", error);
+      return res.status(400).json({ 
+        message: "Failed to apply template", 
+        error: error.message || "Unknown error occurred",
+        success: false
+      });
+    }
+  });
+  
+  app.post("/api/templates/:id/version", async (req, res) => {
+    try {
+      const templateId = req.params.id;
+      
+      const schema = z.object({
+        name: z.string().optional(),
+        description: z.string().optional(),
+        role: z.enum(["writer", "designer", "developer", "marketer"]).optional(),
+        category: z.string().optional(),
+        tags: z.array(z.string()).optional(),
+        content: z.string().optional(),
+        isPublic: z.boolean().optional()
+      });
+      
+      const updates = schema.parse(req.body);
+      
+      // Find template
+      const template = templates.find(t => t.id === templateId);
+      
+      if (!template) {
+        return res.status(404).json({ 
+          message: "Template not found", 
+          success: false 
+        });
+      }
+      
+      // Create new version
+      const newVersion = createTemplateVersion(template, updates);
+      
+      // Add to storage
+      templates.push(newVersion);
+      
+      return res.status(201).json({
+        template: newVersion,
+        success: true
+      });
+    } catch (error: any) {
+      console.error("Error creating template version:", error);
+      return res.status(400).json({ 
+        message: "Failed to create template version", 
+        error: error.message || "Unknown error occurred",
+        success: false
+      });
+    }
+  });
+  
+  app.get("/api/templates/:id/versions", async (req, res) => {
+    try {
+      const templateId = req.params.id;
+      
+      // Find all versions of template
+      const allVersions = [];
+      
+      // Start with the requested template
+      const template = templates.find(t => t.id === templateId);
+      if (!template) {
+        return res.status(404).json({ 
+          message: "Template not found", 
+          success: false 
+        });
+      }
+      
+      allVersions.push(template);
+      
+      // Find previous versions
+      let previousId = template.previousVersionId;
+      while (previousId) {
+        const prevVersion = templates.find(t => t.id === previousId);
+        if (prevVersion) {
+          allVersions.push(prevVersion);
+          previousId = prevVersion.previousVersionId;
+        } else {
+          break;
+        }
+      }
+      
+      // Find newer versions
+      const newerVersions = templates.filter(t => t.previousVersionId === templateId);
+      allVersions.push(...newerVersions);
+      
+      // Sort by version number
+      allVersions.sort((a, b) => b.version - a.version);
+      
+      return res.json({
+        versions: allVersions,
+        success: true
+      });
+    } catch (error: any) {
+      console.error("Error fetching template versions:", error);
+      return res.status(500).json({ 
+        message: "Failed to fetch template versions", 
+        error: error.message || "Unknown error occurred",
+        success: false
+      });
+    }
+  });
+  
+  app.post("/api/templates/compare", async (req, res) => {
+    try {
+      const schema = z.object({
+        templateId1: z.string(),
+        templateId2: z.string()
+      });
+      
+      const { templateId1, templateId2 } = schema.parse(req.body);
+      
+      // Find templates
+      const template1 = templates.find(t => t.id === templateId1);
+      const template2 = templates.find(t => t.id === templateId2);
+      
+      if (!template1 || !template2) {
+        return res.status(404).json({ 
+          message: "One or both templates not found", 
+          success: false 
+        });
+      }
+      
+      // Compare templates
+      const comparison = compareTemplateVersions(template1, template2);
+      
+      return res.json({
+        comparison,
+        success: true
+      });
+    } catch (error: any) {
+      console.error("Error comparing templates:", error);
+      return res.status(400).json({ 
+        message: "Failed to compare templates", 
+        error: error.message || "Unknown error occurred",
+        success: false
+      });
+    }
+  });
+  
+  app.get("/api/templates/popular", async (req, res) => {
+    try {
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 5;
+      
+      // Get popular templates
+      const popularTemplates = getPopularTemplates(templates, limit);
+      
+      return res.json({
+        templates: popularTemplates,
+        success: true
+      });
+    } catch (error: any) {
+      console.error("Error fetching popular templates:", error);
+      return res.status(500).json({ 
+        message: "Failed to fetch popular templates", 
+        error: error.message || "Unknown error occurred",
+        success: false
+      });
+    }
+  });
+  
+  app.get("/api/templates/recent", async (req, res) => {
+    try {
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 5;
+      
+      // Get recent templates
+      const recentTemplates = getRecentTemplates(templates, limit);
+      
+      return res.json({
+        templates: recentTemplates,
+        success: true
+      });
+    } catch (error: any) {
+      console.error("Error fetching recent templates:", error);
+      return res.status(500).json({ 
+        message: "Failed to fetch recent templates", 
+        error: error.message || "Unknown error occurred",
+        success: false
+      });
+    }
+  });
+  
+  app.get("/api/templates/recommended", async (req, res) => {
+    try {
+      const userId = req.query.userId ? parseInt(req.query.userId as string) : undefined;
+      const role = req.query.role as UserRole | undefined;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 5;
+      
+      if (!userId || !role) {
+        return res.status(400).json({ 
+          message: "User ID and role are required", 
+          success: false 
+        });
+      }
+      
+      // Get user
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ 
+          message: "User not found", 
+          success: false 
+        });
+      }
+      
+      // Get user's used template IDs (fake data for demo)
+      const userUsedTemplateIds: string[] = [];
+      
+      // Get recommended templates
+      const recommendedTemplates = getRecommendedTemplates(
+        templates, 
+        role, 
+        userUsedTemplateIds,
+        limit
+      );
+      
+      return res.json({
+        templates: recommendedTemplates,
+        success: true
+      });
+    } catch (error: any) {
+      console.error("Error fetching recommended templates:", error);
+      return res.status(500).json({ 
+        message: "Failed to fetch recommended templates", 
+        error: error.message || "Unknown error occurred",
+        success: false
+      });
+    }
+  });
+  
+  // Analytics APIs
+  // In-memory storage for usage data
+  const usageData: UsageDataPoint[] = [];
+  
+  app.post("/api/analytics/track", async (req, res) => {
+    try {
+      const schema = z.object({
+        userId: z.number(),
+        promptId: z.number().optional(),
+        templateId: z.string().optional(),
+        role: z.enum(["writer", "designer", "developer", "marketer"]),
+        promptType: z.string().optional(),
+        category: z.string().optional(),
+        tags: z.array(z.string()).optional(),
+        enhancementScore: z.number().optional(),
+        wordCountBefore: z.number().optional(),
+        wordCountAfter: z.number().optional(),
+        sessionDuration: z.number().optional()
+      });
+      
+      const pointData = schema.parse(req.body);
+      
+      // Track usage
+      const dataPoint: UsageDataPoint = {
+        ...pointData,
+        timestamp: new Date()
+      };
+      
+      // Add to storage
+      trackUsage(usageData, dataPoint);
+      
+      return res.json({
+        success: true
+      });
+    } catch (error: any) {
+      console.error("Error tracking usage:", error);
+      return res.status(400).json({ 
+        message: "Failed to track usage", 
+        error: error.message || "Unknown error occurred",
+        success: false
+      });
+    }
+  });
+  
+  app.get("/api/analytics/heatmap", async (req, res) => {
+    try {
+      const range = (req.query.range || 'last30days') as DateRange;
+      
+      // Generate heatmap data
+      const heatmapData = generateRolePromptHeatmap(usageData, range);
+      
+      return res.json({
+        heatmap: heatmapData,
+        success: true
+      });
+    } catch (error: any) {
+      console.error("Error generating heatmap:", error);
+      return res.status(500).json({ 
+        message: "Failed to generate heatmap", 
+        error: error.message || "Unknown error occurred",
+        success: false
+      });
+    }
+  });
+  
+  app.get("/api/analytics/trends", async (req, res) => {
+    try {
+      const range = (req.query.range || 'last30days') as DateRange;
+      const groupBy = (req.query.groupBy || 'day') as 'day' | 'week' | 'month';
+      
+      // Generate usage trends
+      const trendsData = generateUsageTrends(usageData, range, groupBy);
+      
+      return res.json({
+        trends: trendsData,
+        success: true
+      });
+    } catch (error: any) {
+      console.error("Error generating trends:", error);
+      return res.status(500).json({ 
+        message: "Failed to generate trends", 
+        error: error.message || "Unknown error occurred",
+        success: false
+      });
+    }
+  });
+  
+  app.get("/api/analytics/breakdown", async (req, res) => {
+    try {
+      const range = (req.query.range || 'last30days') as DateRange;
+      const breakdownBy = (req.query.breakdownBy || 'role') as 'role' | 'promptType' | 'category' | 'tags';
+      
+      // Generate usage breakdown
+      const breakdownData = generateUsageBreakdown(usageData, breakdownBy, range);
+      
+      return res.json({
+        breakdown: breakdownData,
+        success: true
+      });
+    } catch (error: any) {
+      console.error("Error generating breakdown:", error);
+      return res.status(500).json({ 
+        message: "Failed to generate breakdown", 
+        error: error.message || "Unknown error occurred",
+        success: false
+      });
+    }
+  });
+  
+  app.get("/api/analytics/wordstats", async (req, res) => {
+    try {
+      const range = (req.query.range || 'last30days') as DateRange;
+      
+      // Generate word count stats
+      const statsData = generateWordCountStats(usageData, range);
+      
+      return res.json({
+        stats: statsData,
+        success: true
+      });
+    } catch (error: any) {
+      console.error("Error generating word stats:", error);
+      return res.status(500).json({ 
+        message: "Failed to generate word stats", 
+        error: error.message || "Unknown error occurred",
+        success: false
+      });
+    }
+  });
+  
+  app.get("/api/analytics/user/:userId", async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const range = (req.query.range || 'last30days') as DateRange;
+      
+      // Check if user exists
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ 
+          message: "User not found", 
+          success: false 
+        });
+      }
+      
+      // Generate user insights
+      const insights = generateUserInsights(usageData, userId, range);
+      
+      return res.json({
+        insights,
+        success: true
+      });
+    } catch (error: any) {
+      console.error("Error generating user insights:", error);
+      return res.status(500).json({ 
+        message: "Failed to generate user insights", 
         error: error.message || "Unknown error occurred",
         success: false
       });
