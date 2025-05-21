@@ -10,16 +10,39 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { enhancePrompt, EnhancedPrompt, UserRole } from "@/lib/utils/ai-engine";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { EnhancedPrompt, UserRole } from "@/lib/utils/ai-engine";
+import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { useTheme } from "@/components/ui/theme-provider";
 
+// Template types available in our custom prompt engine
+type TemplateType = "blog" | "technical" | "creative" | "marketing" | "email" | "social" | "presentation" | "product";
+
+// Tone options for the prompt
+type ToneType = "professional" | "conversational" | "persuasive" | "instructional" | "inspirational";
+
+// Industry options
+type IndustryType = "technology" | "healthcare" | "education" | "finance" | "ecommerce" | "entertainment" | "nonprofit";
+
 export default function TryDemo() {
-  const [inputPrompt, setInputPrompt] = useState("");
+  const [topic, setTopic] = useState("");
   const [outputPrompt, setOutputPrompt] = useState<EnhancedPrompt | null>(null);
-  const [isEnhancing, setIsEnhancing] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [selectedRole, setSelectedRole] = useState<UserRole>("writer");
+  const [selectedTemplate, setSelectedTemplate] = useState<TemplateType>("blog");
+  const [selectedTone, setSelectedTone] = useState<ToneType>("professional");
+  const [selectedIndustry, setSelectedIndustry] = useState<IndustryType | "">("");
+  const [suggestions, setSuggestions] = useState<string[]>([]);
   
   const enhancedTextareaRef = useRef<HTMLTextAreaElement>(null);
   const { toast } = useToast();
@@ -30,37 +53,68 @@ export default function TryDemo() {
     setTheme(theme === "dark" ? "light" : "dark");
   };
 
-  // Handle the enhancement process
-  const handleEnhancePrompt = async () => {
-    if (!inputPrompt.trim()) {
+  // Handle the prompt generation process
+  const handleGeneratePrompt = async () => {
+    if (!topic.trim()) {
       toast({
-        title: "Empty prompt",
-        description: "Please enter a prompt to enhance.",
+        title: "Empty topic",
+        description: "Please enter a topic for your prompt.",
         variant: "destructive",
       });
       return;
     }
 
-    setIsEnhancing(true);
+    setIsGenerating(true);
     
     try {
-      // Use the client-side algorithm for immediate feedback
-      const clientEnhanced = enhancePrompt(inputPrompt, selectedRole);
-      setOutputPrompt(clientEnhanced);
-      
-      toast({
-        title: "Prompt enhanced!",
-        description: "Your prompt has been successfully enhanced.",
+      // Use our custom prompt generation API
+      const response = await apiRequest("/api/prompts/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          topic: topic,
+          templateType: selectedTemplate,
+          role: selectedRole,
+          tone: selectedTone,
+          industry: selectedIndustry || undefined,
+          useEnhancedAlgorithm: false, // Using basic algorithm for demo
+          save: false // Not saving prompts for demo users
+        }),
       });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to generate prompt");
+      }
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        setOutputPrompt(data.enhancedPrompt);
+        
+        // Set any additional suggestions if available
+        if (data.additionalSuggestions && Array.isArray(data.additionalSuggestions)) {
+          setSuggestions(data.additionalSuggestions);
+        }
+        
+        toast({
+          title: "Prompt generated!",
+          description: "Your prompt has been successfully created and enhanced.",
+        });
+      } else {
+        throw new Error(data.message || "Failed to generate prompt");
+      }
     } catch (error) {
-      console.error("Error enhancing prompt:", error);
+      console.error("Error generating prompt:", error);
       toast({
-        title: "Enhancement failed",
-        description: "There was an error enhancing your prompt. Please try again.",
+        title: "Generation failed",
+        description: error instanceof Error ? error.message : "There was an error generating your prompt. Please try again.",
         variant: "destructive",
       });
     } finally {
-      setIsEnhancing(false);
+      setIsGenerating(false);
     }
   };
 
@@ -77,8 +131,14 @@ export default function TryDemo() {
 
   // Clear the workspace
   const handleClear = () => {
-    setInputPrompt("");
+    setTopic("");
     setOutputPrompt(null);
+    setSuggestions([]);
+  };
+  
+  // Handle using a suggested topic
+  const handleUseSuggestion = (suggestion: string) => {
+    setTopic(suggestion);
   };
 
   return (
@@ -136,21 +196,102 @@ export default function TryDemo() {
             </p>
           </div>
           
-          {/* Role selector */}
+          {/* Configuration panel */}
           <div className="max-w-3xl mx-auto mb-8">
             <div className="bg-white dark:bg-neutral-800 p-4 rounded-lg shadow-sm border border-neutral-200 dark:border-neutral-700">
-              <h2 className="text-lg font-medium mb-3">Select your role:</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                {(["writer", "designer", "developer", "marketer"] as UserRole[]).map((role) => (
-                  <Button 
-                    key={role}
-                    variant={selectedRole === role ? "default" : "outline"}
-                    className={selectedRole === role ? "gradient-bg" : ""}
-                    onClick={() => setSelectedRole(role)}
+              <h2 className="text-lg font-medium mb-3">Configure your prompt:</h2>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Template Type</label>
+                  <Select
+                    value={selectedTemplate}
+                    onValueChange={(value) => setSelectedTemplate(value as TemplateType)}
                   >
-                    {role.charAt(0).toUpperCase() + role.slice(1)}
-                  </Button>
-                ))}
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select template" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectLabel>Content Templates</SelectLabel>
+                        <SelectItem value="blog">Blog Post</SelectItem>
+                        <SelectItem value="technical">Technical Documentation</SelectItem>
+                        <SelectItem value="creative">Creative Writing</SelectItem>
+                        <SelectItem value="marketing">Marketing Campaign</SelectItem>
+                        <SelectItem value="email">Email Template</SelectItem>
+                        <SelectItem value="social">Social Media Content</SelectItem>
+                        <SelectItem value="presentation">Presentation Outline</SelectItem>
+                        <SelectItem value="product">Product Description</SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-1">Tone</label>
+                  <Select
+                    value={selectedTone}
+                    onValueChange={(value) => setSelectedTone(value as ToneType)}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select tone" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectLabel>Content Tone</SelectLabel>
+                        <SelectItem value="professional">Professional</SelectItem>
+                        <SelectItem value="conversational">Conversational</SelectItem>
+                        <SelectItem value="persuasive">Persuasive</SelectItem>
+                        <SelectItem value="instructional">Instructional</SelectItem>
+                        <SelectItem value="inspirational">Inspirational</SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Role</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(["writer", "designer", "developer", "marketer"] as UserRole[]).map((role) => (
+                      <Button 
+                        key={role}
+                        variant={selectedRole === role ? "default" : "outline"}
+                        className={selectedRole === role ? "gradient-bg" : ""}
+                        onClick={() => setSelectedRole(role)}
+                        size="sm"
+                      >
+                        {role.charAt(0).toUpperCase() + role.slice(1)}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-1">Industry (Optional)</label>
+                  <Select
+                    value={selectedIndustry}
+                    onValueChange={(value) => setSelectedIndustry(value as IndustryType)}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select industry" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectLabel>Industries</SelectLabel>
+                        <SelectItem value="">None</SelectItem>
+                        <SelectItem value="technology">Technology</SelectItem>
+                        <SelectItem value="healthcare">Healthcare</SelectItem>
+                        <SelectItem value="education">Education</SelectItem>
+                        <SelectItem value="finance">Finance</SelectItem>
+                        <SelectItem value="ecommerce">E-commerce</SelectItem>
+                        <SelectItem value="entertainment">Entertainment</SelectItem>
+                        <SelectItem value="nonprofit">Nonprofit</SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
           </div>
@@ -159,27 +300,46 @@ export default function TryDemo() {
             {/* Input Card */}
             <Card>
               <CardHeader>
-                <CardTitle>Input Prompt</CardTitle>
+                <CardTitle>Your Topic</CardTitle>
                 <CardDescription>
-                  Enter your basic prompt to enhance with AI
+                  Enter the topic you want to create a prompt for
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <Textarea 
-                  placeholder="Enter your prompt here... (e.g., 'Write about climate change')"
+                  placeholder="Enter your topic here... (e.g., 'climate change solutions')"
                   className="min-h-[200px] resize-none"
-                  value={inputPrompt}
-                  onChange={(e) => setInputPrompt(e.target.value)}
+                  value={topic}
+                  onChange={(e) => setTopic(e.target.value)}
                 />
+                
+                {suggestions.length > 0 && (
+                  <div className="mt-4">
+                    <h4 className="text-sm font-medium mb-2">Related Topics:</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {suggestions.map((suggestion, index) => (
+                        <Button
+                          key={index}
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleUseSuggestion(suggestion)}
+                          className="text-xs"
+                        >
+                          {suggestion}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </CardContent>
               <CardFooter className="flex justify-between">
                 <Button variant="outline" onClick={handleClear}>Clear</Button>
                 <Button 
                   className="gradient-bg text-white"
-                  onClick={handleEnhancePrompt}
-                  disabled={isEnhancing || !inputPrompt.trim()}
+                  onClick={handleGeneratePrompt}
+                  disabled={isGenerating || !topic.trim()}
                 >
-                  {isEnhancing ? "Enhancing..." : "Enhance Prompt"}
+                  {isGenerating ? "Generating..." : "Generate Prompt"}
                 </Button>
               </CardFooter>
             </Card>

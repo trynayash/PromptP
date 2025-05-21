@@ -30,8 +30,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const clerkId = req.headers["x-clerk-user-id"] as string;
       let user = null;
       
-      // If user requests advanced AI or saving, we need to check authentication and plan
-      if (useAdvancedAI || save) {
+      // If user requests enhanced algorithm or saving, we need to check authentication and plan
+      if (useEnhancedAlgorithm || save) {
         if (!clerkId) {
           return res.status(401).json({ 
             message: "Authentication required for advanced features",
@@ -48,10 +48,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
         
-        // Advanced AI is only for pro users
-        if (useAdvancedAI && user.plan !== "pro") {
+        // Enhanced algorithm is only for pro users
+        if (useEnhancedAlgorithm && user.plan !== "pro") {
           return res.status(403).json({ 
-            message: "Advanced AI features require a Pro subscription",
+            message: "Enhanced prompt generation features require a Pro subscription",
             success: false
           });
         }
@@ -75,11 +75,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Generate the prompt
-      const result = await generatePrompt({
+      const result = generatePrompt({
         topic,
-        templateType: templateType as PromptTemplate,
+        templateType: templateType as PromptTemplateType,
         role,
-        useAdvancedAI: useAdvancedAI && user?.plan === "pro"
+        tone,
+        industry,
+        useEnhancedAlgorithm: useEnhancedAlgorithm && user?.plan === "pro"
       });
       
       // Save to database if requested and user is authenticated
@@ -108,23 +110,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         saved: false,
         success: true
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error generating prompt:", error);
       return res.status(400).json({ 
         message: "Failed to generate prompt", 
-        error: error.message,
+        error: error.message || "Unknown error occurred",
         success: false
       });
     }
   });
   
-  // API to check if advanced AI is available
-  app.get("/api/system/ai-status", async (req, res) => {
-    // Check if OpenAI API key is available (without exposing the key)
-    const hasOpenAI = !!process.env.OPENAI_API_KEY;
-    
+  // API to check if enhanced prompt algorithm is available
+  app.get("/api/system/prompt-engine-status", async (req, res) => {
+    // Our custom prompt engine is always available
     return res.json({
-      advancedAIAvailable: hasOpenAI,
+      enhancedAlgorithmAvailable: true,
+      templateTypes: [
+        "blog", "technical", "creative", "marketing", 
+        "email", "social", "presentation", "product"
+      ],
+      tones: ["professional", "conversational", "persuasive", "instructional", "inspirational"],
+      industries: [
+        "technology", "healthcare", "education", "finance", 
+        "ecommerce", "entertainment", "nonprofit"
+      ],
       success: true
     });
   });
