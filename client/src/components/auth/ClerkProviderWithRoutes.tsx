@@ -16,38 +16,30 @@ export function ClerkProviderWithRoutes({ children }: ClerkProviderWithRoutesPro
   const isPublicPage = publicPages.includes(location);
   
   // Get Clerk publishable key from environment
-  const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || "";
+  const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
+  // Handle app behavior when Clerk key is missing
+  useEffect(() => {
+    if (!clerkPubKey) {
+      console.warn("Clerk publishable key is missing. Authentication will not work properly.");
+    }
+  }, [clerkPubKey]);
+
+  // For development purposes, if no key is available, still render children
   if (!clerkPubKey) {
-    console.warn("Clerk publishable key is missing. Authentication will not work properly.");
-  }
-
-  // Get domains for Clerk
-  const domain = typeof window !== "undefined" ? window.location.hostname : "";
-  const domains = [domain];
-  
-  // Add both http and https versions
-  domains.push(
-    `http://${domain}`,
-    `https://${domain}`
-  );
-  
-  // Check for Replit domains if available
-  const replitDomains = import.meta.env.REPLIT_DOMAINS;
-  if (replitDomains && typeof replitDomains === 'string') {
-    const splitDomains = replitDomains.split(",");
-    // Add each domain with both http and https
-    splitDomains.forEach(d => {
-      domains.push(
-        `http://${d.trim()}`,
-        `https://${d.trim()}`
-      );
-    });
+    return <>{children}</>;
   }
 
   return (
     <ClerkProvider 
       publishableKey={clerkPubKey}
+      appearance={{
+        elements: {
+          // Customize Clerk appearance if needed
+          formButtonPrimary: 'bg-gradient-to-r from-primary-500 to-secondary-500 hover:from-primary-600 hover:to-secondary-600',
+          card: 'rounded-xl shadow-md',
+        }
+      }}
     >
       {isPublicPage ? (
         children
