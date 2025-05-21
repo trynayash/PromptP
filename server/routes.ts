@@ -3,6 +3,29 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { enhancePrompt } from "./ai-engine";
 import { generatePrompt, PromptTemplateType } from "./custom-prompt-engine";
+import { analyzePromptQuality } from "./prompt-quality-analyzer";
+import {
+  createDefaultPromptStructure,
+  extractBlocksFromPrompt,
+  updateBlock,
+  addBlock, 
+  removeBlock,
+  reorderBlocks,
+  getBlockTemplates,
+  PromptBlockType
+} from "./prompt-block-builder";
+import {
+  createTemplate,
+  applyTemplate,
+  validateTemplate,
+  createTemplateVersion,
+  searchTemplates,
+  groupTemplatesByCategory,
+  getPopularTemplates,
+  getRecentTemplates,
+  getRecommendedTemplates,
+  compareTemplateVersions
+} from "./template-manager";
 import { z } from "zod";
 import { insertPromptSchema } from "@shared/schema";
 
@@ -10,6 +33,225 @@ import { insertPromptSchema } from "@shared/schema";
 const FREE_TIER_DAILY_LIMIT = 10;
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Prompt Block Builder APIs
+  app.post("/api/prompts/extract-blocks", async (req, res) => {
+    try {
+      const schema = z.object({
+        prompt: z.string().min(1, "Prompt is required")
+      });
+      
+      const { prompt } = schema.parse(req.body);
+      
+      // Extract blocks from the prompt
+      const blocks = extractBlocksFromPrompt(prompt);
+      
+      return res.json({
+        blocks,
+        combinedPrompt: prompt,
+        success: true
+      });
+    } catch (error: any) {
+      console.error("Error extracting prompt blocks:", error);
+      return res.status(400).json({ 
+        message: "Failed to extract prompt blocks", 
+        error: error.message || "Unknown error occurred",
+        success: false
+      });
+    }
+  });
+  
+  app.get("/api/prompts/block-templates", async (_req, res) => {
+    try {
+      // Get block templates
+      const templates = getBlockTemplates();
+      
+      return res.json({
+        templates,
+        success: true
+      });
+    } catch (error: any) {
+      console.error("Error getting block templates:", error);
+      return res.status(500).json({ 
+        message: "Failed to get block templates", 
+        error: error.message || "Unknown error occurred",
+        success: false
+      });
+    }
+  });
+  
+  app.post("/api/prompts/create-structure", async (req, res) => {
+    try {
+      const schema = z.object({
+        prompt: z.string().optional()
+      });
+      
+      const { prompt } = schema.parse(req.body);
+      
+      // Create a structure from an existing prompt or create a default one
+      const promptStructure = prompt 
+        ? { blocks: extractBlocksFromPrompt(prompt), combinedPrompt: prompt }
+        : createDefaultPromptStructure();
+      
+      return res.json({
+        ...promptStructure,
+        success: true
+      });
+    } catch (error: any) {
+      console.error("Error creating prompt structure:", error);
+      return res.status(400).json({ 
+        message: "Failed to create prompt structure", 
+        error: error.message || "Unknown error occurred",
+        success: false
+      });
+    }
+  });
+  
+  app.post("/api/prompts/update-block", async (req, res) => {
+    try {
+      const schema = z.object({
+        promptStructure: z.object({
+          blocks: z.array(z.any()),
+          combinedPrompt: z.string()
+        }),
+        blockId: z.string(),
+        content: z.string()
+      });
+      
+      const { promptStructure, blockId, content } = schema.parse(req.body);
+      
+      // Update the block
+      const updatedStructure = updateBlock(promptStructure, blockId, content);
+      
+      return res.json({
+        ...updatedStructure,
+        success: true
+      });
+    } catch (error: any) {
+      console.error("Error updating prompt block:", error);
+      return res.status(400).json({ 
+        message: "Failed to update prompt block", 
+        error: error.message || "Unknown error occurred",
+        success: false
+      });
+    }
+  });
+  
+  app.post("/api/prompts/add-block", async (req, res) => {
+    try {
+      const schema = z.object({
+        promptStructure: z.object({
+          blocks: z.array(z.any()),
+          combinedPrompt: z.string()
+        }),
+        blockType: z.string().refine(type => 
+          ['context', 'goal', 'tone', 'audience', 'constraints', 'format', 'examples', 'custom'].includes(type),
+          { message: "Invalid block type" }
+        )
+      });
+      
+      const { promptStructure, blockType } = schema.parse(req.body);
+      
+      // Add a new block
+      const updatedStructure = addBlock(promptStructure, blockType as PromptBlockType);
+      
+      return res.json({
+        ...updatedStructure,
+        success: true
+      });
+    } catch (error: any) {
+      console.error("Error adding prompt block:", error);
+      return res.status(400).json({ 
+        message: "Failed to add prompt block", 
+        error: error.message || "Unknown error occurred",
+        success: false
+      });
+    }
+  });
+  
+  app.post("/api/prompts/remove-block", async (req, res) => {
+    try {
+      const schema = z.object({
+        promptStructure: z.object({
+          blocks: z.array(z.any()),
+          combinedPrompt: z.string()
+        }),
+        blockId: z.string()
+      });
+      
+      const { promptStructure, blockId } = schema.parse(req.body);
+      
+      // Remove a block
+      const updatedStructure = removeBlock(promptStructure, blockId);
+      
+      return res.json({
+        ...updatedStructure,
+        success: true
+      });
+    } catch (error: any) {
+      console.error("Error removing prompt block:", error);
+      return res.status(400).json({ 
+        message: "Failed to remove prompt block", 
+        error: error.message || "Unknown error occurred",
+        success: false
+      });
+    }
+  });
+  
+  app.post("/api/prompts/reorder-block", async (req, res) => {
+    try {
+      const schema = z.object({
+        promptStructure: z.object({
+          blocks: z.array(z.any()),
+          combinedPrompt: z.string()
+        }),
+        blockId: z.string(),
+        newOrder: z.number().int().min(0)
+      });
+      
+      const { promptStructure, blockId, newOrder } = schema.parse(req.body);
+      
+      // Reorder blocks
+      const updatedStructure = reorderBlocks(promptStructure, blockId, newOrder);
+      
+      return res.json({
+        ...updatedStructure,
+        success: true
+      });
+    } catch (error: any) {
+      console.error("Error reordering prompt blocks:", error);
+      return res.status(400).json({ 
+        message: "Failed to reorder prompt blocks", 
+        error: error.message || "Unknown error occurred",
+        success: false
+      });
+    }
+  });
+  
+  // Prompt Quality Analyzer API
+  app.post("/api/prompts/analyze-quality", async (req, res) => {
+    try {
+      const schema = z.object({
+        prompt: z.string().min(1, "Prompt is required")
+      });
+      
+      const { prompt } = schema.parse(req.body);
+      
+      // Analyze the prompt quality
+      const qualityFeedback = analyzePromptQuality(prompt);
+      
+      return res.json({
+        ...qualityFeedback,
+        success: true
+      });
+    } catch (error: any) {
+      console.error("Error analyzing prompt quality:", error);
+      return res.status(400).json({ 
+        message: "Failed to analyze prompt quality", 
+        error: error.message || "Unknown error occurred",
+        success: false
+      });
+    }
+  });
   // Advanced prompt generation API
   app.post("/api/prompts/generate", async (req, res) => {
     try {
