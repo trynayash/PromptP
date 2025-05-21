@@ -1,0 +1,118 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 0 0% 100%;
+  --foreground: 20 14.3% 4.1%;
+  --muted: 60 4.8% 95.9%;
+  --muted-foreground: 25 5.3% 44.7%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 20 14.3% 4.1%;
+  --card: 0 0% 100%;
+  --card-foreground: 20 14.3% 4.1%;
+  --border: 20 5.9% 90%;
+  --input: 20 5.9% 90%;
+  
+  /* Primary: Purple */
+  --primary: 265 89% 66%;
+  --primary-foreground: 0 0% 100%;
+  
+  /* Secondary: Cyan */
+  --secondary: 187 100% 42%;
+  --secondary-foreground: 0 0% 100%;
+  
+  --accent: 273 100% 98%;
+  --accent-foreground: 265 89% 66%;
+  
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 60 9.1% 97.8%;
+  
+  --ring: 265 89% 66%;
+  --radius: 0.5rem;
+  
+  /* Chart colors */
+  --chart-1: 265 89% 66%;
+  --chart-2: 187 100% 42%;
+  --chart-3: 250 95% 76%;
+  --chart-4: 187 80% 74%;
+  --chart-5: 273 100% 88%;
+}
+
+.dark {
+  --background: 240 10% 3.9%;
+  --foreground: 0 0% 98%;
+  --muted: 240 3.7% 15.9%;
+  --muted-foreground: 240 5% 64.9%;
+  --popover: 240 10% 3.9%;
+  --popover-foreground: 0 0% 98%;
+  --card: 240 10% 3.9%;
+  --card-foreground: 0 0% 98%;
+  --border: 240 3.7% 15.9%;
+  --input: 240 3.7% 15.9%;
+  
+  /* Primary: Lighter Purple */
+  --primary: 265 89% 72%;
+  --primary-foreground: 0 0% 100%;
+  
+  /* Secondary: Lighter Cyan */
+  --secondary: 187 96% 52%;
+  --secondary-foreground: 0 0% 100%;
+  
+  --accent: 265 30% 20%;
+  --accent-foreground: 265 89% 72%;
+  
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 0 0% 98%;
+  
+  --ring: 265 89% 72%;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+}
+
+/* Custom utility classes */
+.gradient-text {
+  @apply bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent;
+}
+
+.gradient-bg {
+  @apply bg-gradient-to-r from-primary to-secondary;
+}
+
+.gradient-border {
+  @apply border-2 border-transparent bg-clip-padding;
+  background-image: linear-gradient(var(--background), var(--background)), 
+                    linear-gradient(to right, hsl(var(--primary)), hsl(var(--secondary)));
+  background-origin: border-box;
+  background-clip: content-box, border-box;
+}
+
+.card-hover {
+  @apply transition-all duration-300 ease-in-out hover:-translate-y-1 hover:shadow-lg;
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes fadeIn {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.5s ease-in;
+}
