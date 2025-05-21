@@ -32,7 +32,7 @@ type TemplateType = "blog" | "technical" | "creative" | "marketing" | "email" | 
 type ToneType = "professional" | "conversational" | "persuasive" | "instructional" | "inspirational";
 
 // Industry options
-type IndustryType = "technology" | "healthcare" | "education" | "finance" | "ecommerce" | "entertainment" | "nonprofit";
+type IndustryType = "technology" | "healthcare" | "education" | "finance" | "ecommerce" | "entertainment" | "nonprofit" | "none";
 
 export default function TryDemo() {
   const [topic, setTopic] = useState("");
@@ -41,7 +41,7 @@ export default function TryDemo() {
   const [selectedRole, setSelectedRole] = useState<UserRole>("writer");
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateType>("blog");
   const [selectedTone, setSelectedTone] = useState<ToneType>("professional");
-  const [selectedIndustry, setSelectedIndustry] = useState<IndustryType | "">("");
+  const [selectedIndustry, setSelectedIndustry] = useState<IndustryType | "none">("none");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   
   const enhancedTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -68,7 +68,7 @@ export default function TryDemo() {
     
     try {
       // Use our custom prompt generation API
-      const response = await apiRequest("/api/prompts/generate", {
+      const response = await fetch("/api/prompts/generate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -78,7 +78,7 @@ export default function TryDemo() {
           templateType: selectedTemplate,
           role: selectedRole,
           tone: selectedTone,
-          industry: selectedIndustry || undefined,
+          industry: selectedIndustry === "none" ? undefined : selectedIndustry,
           useEnhancedAlgorithm: false, // Using basic algorithm for demo
           save: false // Not saving prompts for demo users
         }),
@@ -280,7 +280,7 @@ export default function TryDemo() {
                     <SelectContent>
                       <SelectGroup>
                         <SelectLabel>Industries</SelectLabel>
-                        <SelectItem value="">None</SelectItem>
+                        <SelectItem value="none">None</SelectItem>
                         <SelectItem value="technology">Technology</SelectItem>
                         <SelectItem value="healthcare">Healthcare</SelectItem>
                         <SelectItem value="education">Education</SelectItem>
@@ -386,28 +386,38 @@ export default function TryDemo() {
             </Card>
           </div>
           
-          {/* Before/After Comparison (Only shown when both input and output exist) */}
+          {/* Template Result Comparison (Only shown when output exists) */}
           {outputPrompt && (
             <div className="mt-8 max-w-6xl mx-auto">
-              <h3 className="text-lg font-semibold mb-4">Before / After Comparison</h3>
+              <h3 className="text-lg font-semibold mb-4">Template to Enhanced Prompt</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white dark:bg-neutral-800 rounded-lg p-6 shadow-sm border border-neutral-200 dark:border-neutral-700">
                 <div>
                   <h4 className="font-medium text-neutral-800 dark:text-neutral-200 mb-2 flex justify-between">
-                    <span>Basic Prompt</span>
-                    <span className="text-xs px-2 py-1 bg-neutral-100 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 rounded-full">Before</span>
+                    <span>Generated Template</span>
+                    <span className="text-xs px-2 py-1 bg-neutral-100 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 rounded-full">Base</span>
                   </h4>
                   <div className="p-4 rounded-lg bg-neutral-50 dark:bg-neutral-900">
-                    <p className="text-neutral-600 dark:text-neutral-400">{inputPrompt}</p>
+                    <p className="text-neutral-600 dark:text-neutral-400 whitespace-pre-line">{outputPrompt.original}</p>
                   </div>
                 </div>
                 
                 <div>
                   <h4 className="font-medium text-primary-600 dark:text-primary-400 mb-2 flex justify-between">
                     <span>Enhanced Prompt</span>
-                    <span className="text-xs px-2 py-1 bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 rounded-full">After</span>
+                    <span className="text-xs px-2 py-1 bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 rounded-full">Optimized</span>
                   </h4>
                   <div className="p-4 rounded-lg bg-gradient-to-br from-primary-50/50 to-secondary-50/50 dark:from-primary-900/10 dark:to-secondary-900/10">
                     <p className="text-neutral-700 dark:text-neutral-300 whitespace-pre-line">{outputPrompt.enhanced}</p>
+                  </div>
+                  
+                  <div className="mt-3 flex justify-between text-sm">
+                    <span className="text-neutral-500 dark:text-neutral-400">
+                      Words: {outputPrompt.wordCount.enhanced} 
+                      (+{outputPrompt.wordCount.enhanced - outputPrompt.wordCount.original})
+                    </span>
+                    <span className="text-primary-600 dark:text-primary-400 capitalize">
+                      Specificity: {outputPrompt.specificity}
+                    </span>
                   </div>
                 </div>
               </div>
