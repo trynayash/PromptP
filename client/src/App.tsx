@@ -1,5 +1,5 @@
 import { Switch, Route } from "wouter";
-import { ClerkProviderWithRoutes } from "@/components/auth/ClerkProviderWithRoutes";
+import { SignedIn, SignedOut, RedirectToSignIn } from "@clerk/clerk-react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
@@ -8,8 +8,15 @@ import Dashboard from "@/pages/dashboard";
 import Workspace from "@/pages/workspace";
 import Onboarding from "@/pages/onboarding";
 import TryDemo from "@/pages/try-demo";
+import { useLocation } from "wouter";
+
+// Public routes that don't require authentication
+const publicPages = ["/", "/try-demo"];
 
 function Router() {
+  const [location] = useLocation();
+  const isPublicPage = publicPages.includes(location);
+
   return (
     <Switch>
       <Route path="/" component={HomePage} />
@@ -23,13 +30,25 @@ function Router() {
 }
 
 function App() {
+  const [location] = useLocation();
+  const isPublicPage = publicPages.includes(location);
+
   return (
-    <ClerkProviderWithRoutes>
-      <TooltipProvider>
-        <Toaster />
+    <TooltipProvider>
+      <Toaster />
+      {isPublicPage ? (
         <Router />
-      </TooltipProvider>
-    </ClerkProviderWithRoutes>
+      ) : (
+        <>
+          <SignedIn>
+            <Router />
+          </SignedIn>
+          <SignedOut>
+            <RedirectToSignIn />
+          </SignedOut>
+        </>
+      )}
+    </TooltipProvider>
   );
 }
 
