@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { enhancePrompt } from "./ai-engine";
+import { generatePrompt, PromptTemplateType } from "./custom-prompt-engine";
 import { z } from "zod";
 import { insertPromptSchema } from "@shared/schema";
 
@@ -9,6 +10,124 @@ import { insertPromptSchema } from "@shared/schema";
 const FREE_TIER_DAILY_LIMIT = 10;
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Advanced prompt generation API
+  app.post("/api/prompts/generate", async (req, res) => {
+    try {
+      // Validate the request body
+      const schema = z.object({
+        topic: z.string().min(1, "Topic is required"),
+        templateType: z.string().optional(),
+        role: z.enum(["writer", "designer", "developer", "marketer"]).default("writer"),
+        tone: z.string().optional(),
+        industry: z.string().optional(),
+        useEnhancedAlgorithm: z.boolean().default(false),
+        save: z.boolean().default(false)
+      });
+      
+      const { topic, templateType, role, tone, industry, useEnhancedAlgorithm, save } = schema.parse(req.body);
+      
+      // Check if pro features are requested (advanced AI)
+      const clerkId = req.headers["x-clerk-user-id"] as string;
+      let user = null;
+      
+      // If user requests advanced AI or saving, we need to check authentication and plan
+      if (useAdvancedAI || save) {
+        if (!clerkId) {
+          return res.status(401).json({ 
+            message: "Authentication required for advanced features",
+            success: false
+          });
+        }
+        
+        user = await storage.getUserByClerkId(clerkId);
+        
+        if (!user) {
+          return res.status(404).json({ 
+            message: "User not found",
+            success: false
+          });
+        }
+        
+        // Advanced AI is only for pro users
+        if (useAdvancedAI && user.plan !== "pro") {
+          return res.status(403).json({ 
+            message: "Advanced AI features require a Pro subscription",
+            success: false
+          });
+        }
+        
+        // Check prompt limits for free users
+        if (user.plan === "free") {
+          const today = new Date();
+          const lastPromptDate = user.lastPromptDate ? new Date(user.lastPromptDate) : null;
+          
+          // Reset counter if it's a new day
+          if (!lastPromptDate || !isSameDay(today, lastPromptDate)) {
+            await storage.resetUserPromptUsage(user.id);
+          } else if ((user.promptsUsedToday || 0) >= FREE_TIER_DAILY_LIMIT) {
+            return res.status(402).json({ 
+              message: "Free tier daily limit reached",
+              limit: FREE_TIER_DAILY_LIMIT,
+              success: false
+            });
+          }
+        }
+      }
+      
+      // Generate the prompt
+      const result = await generatePrompt({
+        topic,
+        templateType: templateType as PromptTemplate,
+        role,
+        useAdvancedAI: useAdvancedAI && user?.plan === "pro"
+      });
+      
+      // Save to database if requested and user is authenticated
+      if (save && user) {
+        // Increment usage and create prompt in database
+        await storage.incrementUserPromptUsage(user.id);
+        
+        const savedPrompt = await storage.createPrompt({
+          userId: user.id,
+          originalPrompt: result.prompt,
+          enhancedPrompt: result.enhancedPrompt.enhanced,
+          role
+        });
+        
+        return res.json({
+          ...result,
+          saved: true,
+          promptId: savedPrompt.id,
+          success: true
+        });
+      }
+      
+      // Return the generated prompt
+      return res.json({
+        ...result,
+        saved: false,
+        success: true
+      });
+    } catch (error) {
+      console.error("Error generating prompt:", error);
+      return res.status(400).json({ 
+        message: "Failed to generate prompt", 
+        error: error.message,
+        success: false
+      });
+    }
+  });
+  
+  // API to check if advanced AI is available
+  app.get("/api/system/ai-status", async (req, res) => {
+    // Check if OpenAI API key is available (without exposing the key)
+    const hasOpenAI = !!process.env.OPENAI_API_KEY;
+    
+    return res.json({
+      advancedAIAvailable: hasOpenAI,
+      success: true
+    });
+  });
   // User routes
   app.post("/api/users/clerk", async (req, res) => {
     try {
